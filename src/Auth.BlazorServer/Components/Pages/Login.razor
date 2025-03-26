@@ -1,0 +1,177 @@
+﻿@page "/login"
+@using Auth.Domain.Entities
+@using Microsoft.AspNetCore.Antiforgery
+@using Microsoft.AspNetCore.WebUtilities
+
+@inject SignInManager<AppUser> SignInManager
+@inject UserManager<AppUser> UserManager
+@inject NavigationManager NavigationManager
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Login</h3>
+                </div>
+                <div class="card-body">
+                    @if (!string.IsNullOrEmpty(ErrorMessage))
+                    {
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            @ErrorMessage
+                            <button type="button" class="btn-close" @onclick="ClearError" aria-label="Close"></button>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(ClientId) && !string.IsNullOrEmpty(RedirectUri))
+                    {
+                        <div class="alert alert-info mb-3">
+                            <small>You are about to log in for the '@ClientId' application</small>
+                        </div>
+                    }
+
+                    @attribute [RequireAntiforgeryToken(required: false)]
+                    <EditForm Model="@LoginModel" OnValidSubmit="HandleLoginAsync" FormName="login-form">
+                        <DataAnnotationsValidator />
+
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <InputText id="email" @bind-Value="LoginModel.Email" class="form-control" />
+                            <ValidationMessage For="@(() => LoginModel.Email)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <InputText id="password" @bind-Value="LoginModel.Password" type="password"
+                                       class="form-control" />
+                            <ValidationMessage For="@(() => LoginModel.Password)" />
+                        </div>
+
+                        <div class="mb-3 form-check">
+                            <InputCheckbox id="rememberMe" @bind-Value="LoginModel.RememberMe"
+                                           class="form-check-input" />
+                            <label class="form-check-label" for="rememberMe">Remember Me</label>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Login</button>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    // Initialize the login model.
+    [SupplyParameterFromForm]
+    private LoginViewModel? LoginModel { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+
+    override protected void OnInitialized() => LoginModel ??= new();
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "redirect_uri")]
+    public string RedirectUri { get; set; } = string.Empty;
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "client_id")]
+    public string ClientId { get; set; } = string.Empty;
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "scope")]
+    public string Scope { get; set; } = string.Empty;
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "response_type")]
+    public string ResponseType { get; set; } = string.Empty;
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "code_challenge")]
+    public string CodeChallenge { get; set; } = string.Empty;
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "code_challenge_method")]
+    public string CodeChallengeMethod { get; set; } = string.Empty;
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "state")]
+    public string State { get; set; } = string.Empty;
+
+    private void ClearError()
+    {
+        ErrorMessage = string.Empty;
+    }
+
+    private async Task HandleLoginAsync()
+    {
+        try
+        {
+            var result = await SignInManager.PasswordSignInAsync(
+                LoginModel.Email,
+                LoginModel.Password,
+                LoginModel.RememberMe,
+                lockoutOnFailure: false);
+
+            if (result.Succeeded)
+            {
+                // After successful login, construct the query string for the authorization endpoint.
+                var queryParams = new Dictionary<string, string>();
+
+                if (!string.IsNullOrEmpty(ClientId))
+                    queryParams.Add("client_id", ClientId);
+
+                if (!string.IsNullOrEmpty(RedirectUri))
+                    queryParams.Add("redirect_uri", RedirectUri);
+
+                if (!string.IsNullOrEmpty(ResponseType))
+                    queryParams.Add("response_type", ResponseType);
+
+                if (!string.IsNullOrEmpty(Scope))
+                    queryParams.Add("scope", Scope);
+
+                if (!string.IsNullOrEmpty(CodeChallenge))
+                    queryParams.Add("code_challenge", CodeChallenge);
+
+                if (!string.IsNullOrEmpty(CodeChallengeMethod))
+                    queryParams.Add("code_challenge_method", CodeChallengeMethod);
+
+                if (!string.IsNullOrEmpty(State))
+                    queryParams.Add("state", State);
+
+                var authorizeUrl = QueryHelpers.AddQueryString("/connect/authorize", queryParams);
+                NavigationManager.NavigateTo(authorizeUrl, forceLoad: true);
+            }
+            else if (result.IsLockedOut)
+            {
+                ErrorMessage = "Your account has been locked. Please try again later.";
+            }
+            else if (result.IsNotAllowed)
+            {
+                ErrorMessage = "You are not allowed to log in with this account.";
+            }
+            else if (result.RequiresTwoFactor)
+            {
+                ErrorMessage = "Two-factor authentication is required.";
+            }
+            else
+            {
+                ErrorMessage = "Invalid username or password.";
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"An error occurred during login: {ex.Message}";
+        }
+    }
+
+    public class LoginViewModel
+    {
+        [Required(ErrorMessage = "The email field is required.")]
+        [EmailAddress(ErrorMessage = "Please enter a valid email address.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "The password field is required.")]
+        public string Password { get; set; } = string.Empty;
+
+        public bool RememberMe { get; set; }
+    }
+}
